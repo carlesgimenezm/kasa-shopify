@@ -38,7 +38,7 @@
       class="marquee__content"
       ref="content"
     >
-      <div class="marquee__repeated-items">
+      <div class="marquee__repeated-items" ref="marqueeItems[]">
         {% for block in section.blocks %}
           {% assign alt_text = block.settings.alt | default: block.settings.title %}
           {% capture qv_sizes %}(min-width: 1200px) {{ section.settings.item_width }}px, 50vw{% endcapture %}

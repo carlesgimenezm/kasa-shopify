@@ -27,6 +27,16 @@
     {%- render 'meta-tags' -%}
     {%- render 'stylesheets' -%}
     {%- render 'fonts' -%}
+    <style>
+      @font-face {
+        font-family: 'ITCGaramondStd-LtNarrow';
+        src: url("{{ 'ITCGaramondStd-LtNarrow.woff2' | asset_url }}") format('woff2'),
+             url("{{ 'ITCGaramondStd-LtNarrow.woff' | asset_url }}") format('woff');
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap;
+      }
+    </style>
     {%- render 'scripts' -%}
     {%- render 'theme-styles-variables' -%}
     {%- render 'color-schemes' -%}
