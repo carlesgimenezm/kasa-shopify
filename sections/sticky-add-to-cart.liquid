@@ -1,0 +1,175 @@
+{% comment %}
+  Sticky ATC (Blocks)
+  - Floating rounded card that matches .page-width
+  - Inside is a Horizon Group block so you can add/remove the theme’s own blocks
+    (e.g., Price, Variant picker, Quantity, Buy buttons). This guarantees default behavior:
+    AJAX add, drawer animation, validations, translations, etc.
+  - Hysteresis show/hide (no flicker). It watches the main product form, not the sticky one.
+{% endcomment %}
+
+<section
+  id="sticky-atc-{{ section.id }}"
+  class="sticky-atc"
+  data-show-on-scroll="{{ section.settings.show_on_scroll }}"
+  data-scroll-trigger="{{ section.settings.scroll_trigger | default: 300 }}"
+  data-header-offset="{{ section.settings.header_offset | default: 0 }}"
+  style="
+    --bg: {{ section.settings.bg }};
+    --text: {{ section.settings.text }};
+    --shadow: {{ section.settings.shadow_opacity | divided_by: 100.0 }};
+    --radius: {{ section.settings.card_radius }}px;
+    --space-x: {{ section.settings.card_side_margin }}px;
+    --space-b: {{ section.settings.card_bottom_margin }}px;
+    --z: {{ section.settings.z_index | default: 70 }};
+  "
+>
+  <div class="sticky-atc__frame">
+    <div class="page-width sticky-atc__width">
+      <div class="sticky-atc__card" role="region" aria-label="Sticky purchase bar">
+        <div class="sticky-atc__inner">
+          {%- comment -%}
+            Editable block area: Horizon “group” block that accepts theme blocks (price, variant picker,
+            quantity, buy buttons, etc.). We pass closest.product so those blocks work out of the box.
+          {%- endcomment -%}
+          {%- content_for 'block',
+            type: 'group',
+            id: 'sticky-group',
+            closest.product: product
+          -%}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* Floating frame & card */
+  #sticky-atc-{{ section.id }} .sticky-atc__frame{
+    position: fixed;
+    left: 0; right: 0; bottom: var(--space-b);
+    z-index: var(--z);
+    pointer-events: none; /* only the card is interactive */
+    transform: translateY(120%);
+    transition: transform 220ms ease;
+  }
+  #sticky-atc-{{ section.id }}.is-visible .sticky-atc__frame{ transform: translateY(0); }
+
+  #sticky-atc-{{ section.id }} .sticky-atc__width{ display:flex; justify-content:center; }
+  #sticky-atc-{{ section.id }} .sticky-atc__card{
+    pointer-events: auto;
+    width: 100%;
+    margin: 0 var(--space-x);
+    background: var(--bg);
+    color: var(--text);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 30px rgba(0,0,0,var(--shadow));
+  }
+
+  #sticky-atc-{{ section.id }} .sticky-atc__inner{
+    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: 1fr; /* inner layout is provided by the blocks you add */
+    align-items: center;
+    gap: 12px;
+  }
+
+  @media (max-width: 740px){
+    #sticky-atc-{{ section.id }} .sticky-atc__inner{ padding: 10px 12px; }
+  }
+</style>
+
+<script>
+(function(){
+  var root = document.getElementById('sticky-atc-{{ section.id }}');
+  if(!root) return;
+
+  // Settings
+  var showOnScroll = root.getAttribute('data-show-on-scroll') === 'true';
+  var headerOffset = parseInt(root.getAttribute('data-header-offset') || '0', 10);
+  var triggerPx    = parseInt(root.getAttribute('data-scroll-trigger') || '300', 10); // fallback only
+
+  function show(){ if(!root.classList.contains('is-visible')) root.classList.add('is-visible'); }
+  function hide(){ if(root.classList.contains('is-visible')) root.classList.remove('is-visible'); }
+
+  // --- Visibility with hysteresis (prevents flicker) ---
+  var STATE  = 'hidden';
+  var BUFFER = 32; // px buffer around headerOffset
+
+  // Find the MAIN product form (exclude any inside this sticky section)
+  function getMainProductForm(){
+    var nodelist = document.querySelectorAll('product-form-component form, form[action="/cart/add"]');
+    for(var i=0;i<nodelist.length;i++){
+      if(!root.contains(nodelist[i])) return nodelist[i];
+    }
+    return nodelist[0] || null;
+  }
+
+  function computeVisibility(){
+    var form = getMainProductForm();
+    if(!form){
+      if(!showOnScroll){ return true; }
+      var y = window.scrollY || window.pageYOffset;
+      return y > triggerPx;
+    }
+
+    var rect = form.getBoundingClientRect();
+    var bottom = rect.bottom;
+
+    // two thresholds create a dead zone so we don't flap
+    var showThreshold = headerOffset - BUFFER; // show when form bottom rises above this
+    var hideThreshold = headerOffset + BUFFER; // hide when form bottom falls below this (going back up)
+
+    if(STATE === 'hidden' && bottom <= showThreshold){ STATE = 'shown'; return true; }
+    if(STATE === 'shown'  && bottom >  hideThreshold){ STATE = 'hidden'; return false; }
+    return (STATE === 'shown');
+  }
+
+  var rafId = 0;
+  function onScrollOrResize(){
+    if(rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(function(){
+      if(!showOnScroll){ show(); STATE = 'shown'; return; }
+      var vis = computeVisibility();
+      if(vis) show(); else hide();
+    });
+  }
+
+  window.addEventListener('scroll', onScrollOrResize, { passive:true });
+  window.addEventListener('resize', onScrollOrResize);
+  onScrollOrResize();
+
+  // Optional helper: if theme doesn't auto-open the drawer via settings, open after cart update.
+  document.addEventListener('cart:update', function(){
+    var drawer = document.querySelector('cart-drawer-component');
+    if(drawer && typeof drawer.open === 'function'){
+      if(!drawer.hasAttribute('open') && !drawer.hasAttribute('auto-open')){
+        try { drawer.open(); } catch(_){}
+      }
+    }
+  });
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Sticky ATC Blocks",
+  "settings": [
+    { "type": "checkbox", "id": "show_on_scroll", "label": "Only show after user scrolls past product form", "default": true },
+    { "type": "number",  "id": "scroll_trigger", "label": "Fallback trigger (px) if observer unsupported", "default": 300 },
+    { "type": "number",  "id": "header_offset",  "label": "Fixed header height offset (px)", "default": 0 },
+
+    { "type": "color",   "id": "bg", "label": "Card background", "default": "#ffffff" },
+    { "type": "color",   "id": "text", "label": "Text color", "default": "#111111" },
+    { "type": "range",   "id": "shadow_opacity", "label": "Shadow opacity", "min": 0, "max": 40, "step": 1, "default": 16 },
+    { "type": "range",   "id": "card_radius", "label": "Card corner radius (px)", "min": 0, "max": 32, "step": 1, "default": 16 },
+    { "type": "range",   "id": "card_side_margin", "label": "Side margin (px)", "min": 0, "max": 40, "step": 2, "default": 16 },
+    { "type": "range",   "id": "card_bottom_margin", "label": "Bottom margin (px)", "min": 0, "max": 60, "step": 2, "default": 16 },
+    { "type": "number",  "id": "z_index", "label": "Z-index", "default": 70 }
+  ],
+  "blocks": [
+    { "type": "@app" }
+  ],
+  "presets": [{ "name": "Sticky ATC Blocks" }],
+  "disabled_on": { "groups": ["header", "footer"] }
+}
+{% endschema %}

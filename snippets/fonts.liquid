@@ -1,0 +1,63 @@
+{% # theme-check-disable %}
+
+{%- comment -%} Preload ITC Garamond Std Light Narrow for h1/h2 {%- endcomment -%}
+<link
+  rel="preload"
+  as="font"
+  href="{{ 'ITCGaramondStd-LtNarrow.woff2' | asset_url }}"
+  type="font/woff2"
+  crossorigin
+  fetchpriority="high"
+>
+<style>
+  @font-face {
+    font-family: 'ITCGaramondStd-LtNarrow';
+    src: url('{{ 'ITCGaramondStd-LtNarrow.woff2' | asset_url }}') format('woff2'),
+         url('{{ 'ITCGaramondStd-LtNarrow.woff' | asset_url }}') format('woff');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  }
+</style>
+
+{%- unless settings.type_body_font.system? -%}
+  <link
+    rel="preload"
+    as="font"
+    href="{{ settings.type_body_font | font_url }}"
+    type="font/woff2"
+    crossorigin
+    fetchpriority="low"
+  >
+{%- endunless -%}
+{%- unless settings.type_subheading_font.system? -%}
+  <link
+    rel="preload"
+    as="font"
+    href="{{ settings.type_subheading_font | font_url }}"
+    type="font/woff2"
+    crossorigin
+    fetchpriority="low"
+  >
+{%- endunless -%}
+{%- unless settings.type_heading_font.system? -%}
+  <link
+    rel="preload"
+    as="font"
+    href="{{ settings.type_heading_font | font_url }}"
+    type="font/woff2"
+    crossorigin
+    fetchpriority="low"
+  >
+{%- endunless -%}
+{%- unless settings.type_accent_font.system? -%}
+  <link
+    rel="preload"
+    as="font"
+    href="{{ settings.type_accent_font | font_url }}"
+    type="font/woff2"
+    crossorigin
+    fetchpriority="low"
+  >
+{%- endunless -%}
+{% # theme-check-enable %}

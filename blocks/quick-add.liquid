@@ -1,0 +1,30 @@
+{% comment %}
+  Theme block: Quick add button (uses the existing 'quick-add' snippet)
+
+  Works in groups that pass closest.product (like sticky-group).
+{% endcomment %}
+
+{% liquid
+  # Get the product from context (group passes closest.product)
+  assign quick_add_product = product
+  if quick_add_product == blank and closest and closest.product
+    assign quick_add_product = closest.product
+  endif
+
+  assign quick_add_section_id = section_id | default: section.id
+%}
+
+{% if quick_add_product %}
+  {% render 'quick-add',
+    product: quick_add_product,
+    section_id: quick_add_section_id,
+    block: block
+  %}
+{% endif %}
+
+{% schema %}
+{
+  "name": "Quick add (popup)",
+  "settings": []
+}
+{% endschema %}

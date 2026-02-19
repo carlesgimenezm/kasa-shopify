@@ -1,0 +1,611 @@
+{% comment %}
+  Discount promo modal (Horizon-compatible)
+  - Auto-opens (delay) for logged-out users on home; chip stays after close
+  - Footer-style "Email input" inside modal (valid Shopify customer form)
+  - Customizable chip (font/color/padding/radius) + newsletter input radius
+  - Two display modes:
+      - modal  -> centered, full-screen overlay with blur
+      - corner -> bottom-right banner, no background blur, drop shadow only
+  - Smooth overlay+dialog animations; morph-like transitions
+  - On success: show message, auto-close, then suppress forever
+  - Debug flags:
+      ?promoDebug=1 -> force open now
+      ?promoReset=1 -> clear dismissed/subscribed flags
+      ?promoDiag=1  -> console logs
+{% endcomment %}
+
+{%- if section.settings.chip_font != blank -%}
+  {% style %}{{ section.settings.chip_font | font_face: font_display: 'swap' }}{% endstyle %}
+{%- endif -%}
+
+<style>
+  /* Hidden helpers */
+  #DiscountModal-{{ section.id }} .kasa-discount-overlay[hidden],
+  #DiscountModal-{{ section.id }} .kasa-discount-dialog[hidden],
+  #DiscountModal-{{ section.id }} .kasa-discount-launcher[hidden] {
+    display: none !important;
+  }
+
+  /* Overlay with smooth fade/blur (modal mode) */
+  #DiscountModal-{{ section.id }} .kasa-discount-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(0px);
+    opacity: 0;
+    transition: opacity .25s ease, backdrop-filter .25s ease;
+  }
+  #DiscountModal-{{ section.id }} .kasa-discount-overlay.is-visible {
+    opacity: 1; backdrop-filter: blur(4px);
+  }
+
+  /* Dialog base (centered modal) */
+  #DiscountModal-{{ section.id }} .kasa-discount-dialog {
+    position: fixed; z-index: 10000;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%) scale(.96);
+    width: min(90vw, 720px);
+    max-height: calc(100vh - 6rem);
+    overflow: auto;
+    background: var(--color-background, #fff);
+    color: var(--color-foreground, #111);
+    border-radius: 12px;
+    box-shadow: 0 24px 64px rgba(0,0,0,.25);
+    padding: 2rem;
+    opacity: 0;
+    transition: opacity .25s ease, transform .25s ease, border-radius .25s ease;
+  }
+  #DiscountModal-{{ section.id }} .kasa-discount-dialog.is-visible {
+    opacity: 1; transform: translate(-50%, -50%) scale(1);
+  }
+
+  #DiscountModal-{{ section.id }} .kasa-discount-close {
+    position: absolute; right: .75rem; top: .75rem;
+    border: 0; background: transparent; cursor: pointer;
+    font-size: 1.5rem; line-height: 1; width: 2rem; height: 2rem;
+  }
+
+  #DiscountModal-{{ section.id }} .kasa-discount-content > * + * { margin-top: 1rem; }
+
+  /* Generic buttons for blocks */
+  #DiscountModal-{{ section.id }} .kasa-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
+  #DiscountModal-{{ section.id }} .kasa-actions .button {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: .75rem 1rem; border-radius: 9999px; text-decoration: none;
+    border: 1px solid currentColor;
+  }
+  #DiscountModal-{{ section.id }} .kasa-actions .button--primary { background: currentColor; color: var(--color-background, #fff); }
+  #DiscountModal-{{ section.id }} .kasa-actions .button--secondary { background: transparent; }
+
+  /* Chip (bottom-right) */
+  #DiscountModal-{{ section.id }} .kasa-discount-launcher {
+    position: fixed; right: 1rem; bottom: 1rem; z-index: 9998;
+    border: 0; cursor: pointer;
+    background: var(--chip-bg, var(--color-foreground, #111));
+    color: var(--chip-color, var(--color-background, #fff));
+    border-radius: var(--chip-radius, 9999px);
+    box-shadow: 0 12px 32px rgba(0,0,0,.18);
+    padding: var(--chip-pad, .75rem 1rem);
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-family: var(--chip-font, inherit);
+  }
+  #DiscountModal-{{ section.id }} .kasa-discount-launcher .kasa-dot {
+    width: .6rem; height: .6rem; border-radius: 9999px; background: currentColor; opacity: .5;
+  }
+  #DiscountModal-{{ section.id }} .kasa-discount-chip { font-weight: 600; }
+
+  /* Newsletter input radius */
+  #DiscountModal-{{ section.id }} .email-signup__input-group,
+  #DiscountModal-{{ section.id }} .email-signup__input,
+  #DiscountModal-{{ section.id }} .email-signup__button {
+    border-radius: var(--email-radius, 100px);
+    overflow: hidden;
+  }
+
+  @media (max-width: 749px){
+    #DiscountModal-{{ section.id }} .kasa-discount-dialog {
+      padding: 1.25rem;
+      width: calc(100vw - 2rem);
+    }
+  }
+
+  body.kasa-modal-open { overflow: hidden; }
+
+  /* === Corner banner mode (less invasive) === */
+  #DiscountModal-{{ section.id }}[data-display-mode="corner"] .kasa-discount-overlay {
+    /* No dim / blur background in corner mode */
+    display: none !important;
+  }
+
+  #DiscountModal-{{ section.id }}[data-display-mode="corner"] .kasa-discount-dialog {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    left: auto;
+    top: auto;
+    transform: translate(0, 0) scale(0.9);
+    transform-origin: 100% 100%; /* bottom-right */
+    width: min(420px, 100vw - 2rem);
+    max-height: calc(100vh - 3rem);
+    overflow: auto;
+    border-radius: 16px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28) !important; /* always visible */
+    opacity: 0;
+  }
+
+  #DiscountModal-{{ section.id }}[data-display-mode="corner"] .kasa-discount-dialog.is-visible {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+
+  @media (max-width: 749px){
+    #DiscountModal-{{ section.id }}[data-display-mode="corner"] .kasa-discount-dialog {
+      right: 0.75rem;
+      bottom: 0.75rem;
+      width: calc(100vw - 1.5rem);
+    }
+  }
+</style>
+
+<div
+  id="DiscountModal-{{ section.id }}"
+  class="kasa-discount-modal"
+  data-delay="{{ section.settings.delay_seconds | times: 1000 }}"
+  data-show-once="{{ section.settings.show_once }}"
+  data-display-mode="{{ section.settings.display_mode | default: 'modal' }}"
+  style="
+    --chip-bg: {{ section.settings.chip_bg }};
+    --chip-color: {{ section.settings.chip_text_color }};
+    --chip-radius: {{ section.settings.chip_radius | append: 'px' }};
+    --chip-pad: {{ section.settings.chip_padding | append: 'px' }};
+    --chip-font: {% if section.settings.chip_font != blank %}{{ section.settings.chip_font.family }}, {{ section.settings.chip_font.fallback_families }}{% else %}inherit{% endif %};
+    --email-radius: {{ section.settings.newsletter_radius | default: 100 }}px;
+  "
+>
+  <div class="kasa-discount-overlay" hidden></div>
+
+  <div id="discount-dialog-{{ section.id }}" class="kasa-discount-dialog" role="dialog" aria-modal="true" aria-labelledby="discount-title-{{ section.id }}" hidden>
+    <button type="button" class="kasa-discount-close" aria-label="Close">×</button>
+
+    <div class="kasa-discount-content">
+      {% for block in section.blocks %}
+        {% case block.type %}
+          {% when 'heading' %}
+            <h2 id="discount-title-{{ section.id }}" class="kasa-heading" {{ block.shopify_attributes }}>{{ block.settings.text }}</h2>
+
+          {% when 'text' %}
+            <div class="kasa-text rte" {{ block.shopify_attributes }}>{{ block.settings.text }}</div>
+
+          {% when 'image' %}
+            {% if block.settings.image != blank %}
+              <div class="kasa-image" {{ block.shopify_attributes }}>
+                {{ block.settings.image | image_url: width: 1200 | image_tag: loading: 'lazy', sizes: '(min-width: 750px) 720px, 90vw', alt: block.settings.image.alt | escape }}
+              </div>
+            {% endif %}
+
+          {% when 'newsletter' %}
+            <div class="kasa-newsletter" {{ block.shopify_attributes }}>
+              <div class="email-signup-block size-style spacing-style">
+                {% form 'customer' %}
+                  {%- assign kasa_locale = request.locale.iso_code | default: localization.language.iso_code | default: 'en' -%}
+                  {%- assign kasa_lang_short = kasa_locale | slice: 0, 2 | downcase -%}
+
+                  <input
+                    type="hidden"
+                    name="contact[tags]"
+                    value="newsletter,lang-{{ kasa_lang_short }}"
+                  >
+
+                  <div id="EmailSignupForm-{{ section.id }}" class="email-signup__form spacing-style">
+                    <div class="email-signup__input-group" style="--border-width:1px;">
+                      <label for="EmailInput-{{ section.id }}" class="visually-hidden">Email</label>
+                      <input
+                        id="EmailInput-{{ section.id }}"
+                        class="email-signup__input email-signup__input--all paragraph"
+                        type="email"
+                        name="contact[email]"
+                        autocorrect="off"
+                        autocapitalize="off"
+                        autocomplete="email"
+                        placeholder="{{ block.settings.placeholder }}"
+                        required
+                        {% if form.errors %} autofocus aria-invalid="true" aria-describedby="EmailSignupMessageError-{{ section.id }}"{% elsif form.posted_successfully? %} aria-describedby="EmailSignupMessageSuccess-{{ section.id }}"{% endif %}
+                      >
+                      <button type="submit" class="email-signup__button email-signup__button--arrow button" aria-label="{{ block.settings.submit_label | default: 'Sign up' }}">
+                        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true" class="email-signup__button-icon">{% render 'icon', icon: 'arrow' %}</svg>
+                      </button>
+                    </div>
+
+                    {% if form.errors %}
+                      <div id="EmailSignupMessageError-{{ section.id }}" class="email-signup__message email-signup__message--error" tabindex="-1">
+                        <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true" class="icon-error">{% render 'icon', icon: 'error' %}</svg>
+                        {{ form.errors | default_errors }}
+                      </div>
+                    {% endif %}
+
+                    {% if form.posted_successfully? %}
+                      <div id="EmailSignupMessageSuccess-{{ section.id }}" class="email-signup__message email-signup__message--success" tabindex="-1">
+                        <span class="svg-wrapper icon-success">{{ 'icon-checkmark.svg' | inline_asset_content }}</span>
+                        <p class="email-signup__message-text">{{ section.settings.success_message | default: 'Thanks for subscribing.' }}</p>
+                      </div>
+                    {% endif %}
+                  </div>
+                {% endform %}
+              </div>
+            </div>
+
+          {% when 'button' %}
+            <div class="kasa-actions" {{ block.shopify_attributes }}>
+              <a class="button button--primary" href="{{ block.settings.link }}">{{ block.settings.label }}</a>
+            </div>
+
+          {% when 'button_secondary' %}
+            <div class="kasa-actions" {{ block.shopify_attributes }}>
+              <a class="button button--secondary" href="{{ block.settings.secondary_link }}">{{ block.settings.secondary_label }}</a>
+            </div>
+        {% endcase %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <button type="button" class="kasa-discount-launcher" aria-controls="discount-dialog-{{ section.id }}" hidden>
+    <span class="kasa-discount-chip">{{ section.settings.discount_title }}</span>
+    <span class="kasa-dot" aria-hidden="true"></span>
+  </button>
+</div>
+
+<script>
+(function(){
+  var root = document.getElementById('DiscountModal-{{ section.id }}');
+  if(!root) return;
+
+  var displayMode = root.getAttribute('data-display-mode') || 'modal';
+  var isCorner = displayMode === 'corner';
+
+  var delay = parseInt(root.getAttribute('data-delay'),10) || 8000;
+  var showOnce = root.getAttribute('data-show-once') === 'true';
+  var overlay = root.querySelector('.kasa-discount-overlay');
+  var dialog = root.querySelector('.kasa-discount-dialog');
+  var closeBtn = root.querySelector('.kasa-discount-close');
+  var launcher = root.querySelector('.kasa-discount-launcher');
+
+  var storageKey = 'kasa_discount_modal_{{ section.id }}';
+  var subscribedKey = 'kasa_discount_subscribed_{{ section.id }}';
+  var params = new URLSearchParams(window.location.search);
+  var forceOpen = params.get('promoDebug') === '1';
+  var forceReset = params.get('promoReset') === '1';
+  var diag = params.get('promoDiag') === '1';
+
+  var isHome = "{{ request.page_type }}" === "index";
+  var isLoggedIn = {% if customer %}true{% else %}false{% endif %};
+
+  if (forceReset) {
+    try {
+      sessionStorage.removeItem(storageKey);
+      localStorage.removeItem(subscribedKey);
+    } catch(e){}
+  }
+  if (diag) console.log('[promo] init', { isHome, isLoggedIn, delay, displayMode });
+
+  try {
+    if ((localStorage.getItem(subscribedKey) === 'true') && !forceOpen) {
+      if (diag) console.log('[promo] subscribed already; suppressing');
+      if (overlay) overlay.hidden = true;
+      dialog.hidden = true;
+      launcher.hidden = true;
+      return;
+    }
+  } catch(e){}
+
+  if (!forceOpen) {
+    if (!isHome || isLoggedIn) {
+      if (diag) console.log('[promo] gated: isHome=', isHome, 'isLoggedIn=', isLoggedIn);
+      if (overlay) overlay.hidden = true;
+      dialog.hidden = true;
+      launcher.hidden = true;
+      return;
+    }
+  } else {
+    if (diag) console.log('[promo] forceOpen enabled');
+  }
+
+  function isDismissed(){
+    try { return sessionStorage.getItem(storageKey) === 'dismissed'; }
+    catch(e){ return false; }
+  }
+  function setDismissed(){
+    try { sessionStorage.setItem(storageKey, 'dismissed'); }
+    catch(e){}
+  }
+
+  // Morph-ish animation helpers (fallback to class toggle)
+  var supportsWAAPI = 'animate' in Element.prototype;
+
+  function open(){
+    if (!isCorner && overlay) {
+      overlay.hidden = false;
+      overlay.classList.add('is-visible');
+    }
+
+    dialog.hidden = false;
+    dialog.classList.add('is-visible'); // ensure base visible state
+
+    var didMorph = false;
+
+    try {
+      if (isCorner && supportsWAAPI) {
+        // Corner "genie-ish" open: grow from bottom-right
+        dialog.animate([
+          { opacity: 0, transform: 'translate(0, 20px) scale(0.7)', clipPath: 'inset(50% 0 0 50% round 16px)' },
+          { opacity: 1, transform: 'translate(0, 0) scale(1)', clipPath: 'inset(0 0 0 0 round 16px)' }
+        ], {
+          duration: 350,
+          easing: 'cubic-bezier(.2,.7,.2,1)',
+          fill: 'both'
+        });
+        didMorph = true;
+      } else if (!isCorner && supportsWAAPI && launcher && !launcher.hidden) {
+        // Existing morph from chip -> centered modal
+        var l = launcher.getBoundingClientRect();
+        var vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+        var vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+        var dialogW = Math.min(vw * 0.9, 720);
+        var dialogH = Math.min(vh - 96, 720);
+        var dialogCx = vw/2, dialogCy = vh/2;
+        var launcherCx = l.left + l.width/2, launcherCy = l.top + l.height/2;
+        var dx = launcherCx - dialogCx, dy = launcherCy - dialogCy;
+        var scaleX = Math.max(l.width / dialogW, 0.1);
+        var scaleY = Math.max(l.height / dialogH, 0.1);
+
+        var frames = [
+          { opacity: 0, transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`, borderRadius: getComputedStyle(launcher).borderRadius },
+          { opacity: 1, transform: 'translate(-50%, -50%) translate(0,0) scale(1,1)', borderRadius: getComputedStyle(dialog).borderRadius }
+        ];
+        dialog.animate(frames, {
+          duration: 350,
+          easing: 'cubic-bezier(.2,.7,.2,1)',
+          fill: 'both'
+        });
+        didMorph = true;
+      }
+    } catch(e){
+      didMorph = false;
+    }
+
+    if (!isCorner) {
+      document.body.classList.add('kasa-modal-open');
+    }
+
+    launcher.hidden = true;
+  }
+
+  function close(){
+    var didMorph = false;
+
+    try {
+      if (isCorner && supportsWAAPI) {
+        launcher.hidden = false;
+
+        // Corner "genie-ish" close: reverse of open
+        var player = dialog.animate([
+          { opacity: 1, transform: 'translate(0, 0) scale(1)', clipPath: 'inset(0 0 0 0 round 16px)' },
+          { opacity: 0, transform: 'translate(0, 20px) scale(0.7)', clipPath: 'inset(50% 0 0 50% round 16px)' }
+        ], {
+          duration: 300,
+          easing: 'cubic-bezier(.2,.7,.2,1)',
+          fill: 'forwards'
+        });
+
+        player.addEventListener('finish', function(){
+          dialog.hidden = true;
+          dialog.classList.remove('is-visible');
+          document.body.classList.remove('kasa-modal-open');
+        });
+
+        didMorph = true;
+      } else if (!isCorner && supportsWAAPI && launcher) {
+        launcher.hidden = false; // ensure it exists in layout
+
+        var l = launcher.getBoundingClientRect();
+        var vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+        var vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+        var dialogCx = vw/2, dialogCy = vh/2;
+        var launcherCx = l.left + l.width/2, launcherCy = l.top + l.height/2;
+        var dx = launcherCx - dialogCx, dy = launcherCy - dialogCy;
+        var scaleX = Math.max(l.width / dialog.offsetWidth, 0.1);
+        var scaleY = Math.max(l.height / dialog.offsetHeight, 0.1);
+
+        var player2 = dialog.animate([
+          { opacity: 1, transform: 'translate(-50%, -50%) translate(0,0) scale(1,1)', borderRadius: getComputedStyle(dialog).borderRadius },
+          { opacity: 0, transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`, borderRadius: getComputedStyle(launcher).borderRadius }
+        ], {
+          duration: 300,
+          easing: 'cubic-bezier(.2,.7,.2,1)',
+          fill: 'forwards'
+        });
+
+        player2.addEventListener('finish', function(){
+          if (overlay) {
+            overlay.classList.remove('is-visible');
+            setTimeout(function(){
+              overlay.hidden = true;
+              dialog.hidden = true;
+              dialog.classList.remove('is-visible');
+              document.body.classList.remove('kasa-modal-open');
+            }, 50);
+          } else {
+            dialog.hidden = true;
+            dialog.classList.remove('is-visible');
+            document.body.classList.remove('kasa-modal-open');
+          }
+        });
+
+        didMorph = true;
+      }
+    } catch(e){
+      didMorph = false;
+    }
+
+    if (!didMorph) {
+      dialog.classList.remove('is-visible');
+      if (!isCorner && overlay) {
+        overlay.classList.remove('is-visible');
+        setTimeout(function(){
+          overlay.hidden = true;
+          dialog.hidden = true;
+          document.body.classList.remove('kasa-modal-open');
+        }, 250);
+      } else {
+        dialog.hidden = true;
+      }
+    }
+
+    launcher.hidden = false;
+    setDismissed();
+  }
+
+  // Initial state
+  var successEl = document.getElementById('EmailSignupMessageSuccess-{{ section.id }}');
+  if (successEl) {
+    // Show success briefly, then close and suppress
+    if (diag) console.log('[promo] success present on render; auto-closing soon');
+
+    if (!isCorner && overlay) {
+      overlay.hidden = false;
+      overlay.classList.add('is-visible');
+      document.body.classList.add('kasa-modal-open');
+    }
+
+    dialog.hidden = false;
+    dialog.classList.add('is-visible');
+    launcher.hidden = true;
+
+    try {
+      sessionStorage.setItem(storageKey, 'dismissed');
+      localStorage.setItem(subscribedKey, 'true');
+    } catch(e){}
+
+    setTimeout(function(){ close(); launcher.hidden = true; }, 2500);
+  } else if (forceOpen) {
+    if (diag) console.log('[promo] opening immediately');
+    open();
+  } else if (showOnce && isDismissed()) {
+    launcher.hidden = false;
+  } else {
+    setTimeout(open, delay);
+  }
+
+  // Events
+  if (closeBtn) closeBtn.addEventListener('click', close);
+  if (overlay) overlay.addEventListener('click', close);
+  if (launcher) launcher.addEventListener('click', open);
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && !dialog.hidden){ close(); }
+  });
+
+  // Handle success when theme injects it without full reload
+  document.addEventListener('submit', function(ev){
+    var f = ev.target;
+    if (f && f.closest && f.closest('#DiscountModal-{{ section.id }}')) {
+      setTimeout(function(){
+        var s2 = document.getElementById('EmailSignupMessageSuccess-{{ section.id }}');
+        if (s2) {
+          if (diag) console.log('[promo] success detected post-submit');
+          try { localStorage.setItem(subscribedKey, 'true'); } catch(e){}
+
+          if (!isCorner && overlay) {
+            overlay.hidden = false;
+            overlay.classList.add('is-visible');
+            dialog.hidden = false;
+            dialog.classList.add('is-visible');
+            document.body.classList.add('kasa-modal-open');
+          } else {
+            dialog.hidden = false;
+            dialog.classList.add('is-visible');
+          }
+
+          launcher.hidden = true;
+          setTimeout(function(){ close(); launcher.hidden = true; }, 2500);
+        }
+      }, 1200);
+    }
+  });
+
+  // Keep launcher visible after bfcache restore only if not subscribed
+  window.addEventListener('pageshow', function(){
+    if (isDismissed() && localStorage.getItem(subscribedKey) !== 'true') launcher.hidden = false;
+  });
+
+  // Respect reduced motion
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    dialog.style.transition = 'none';
+    if (overlay) overlay.style.transition = 'none';
+  }
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Discount modal",
+  "tag": "section",
+  "class": "section kasa-discount-section",
+  "settings": [
+    { "type": "text", "id": "discount_title", "label": "Discount title (floating chip)", "default": "-10% on first order" },
+    { "type": "range", "id": "delay_seconds", "label": "Delay before showing", "min": 1, "max": 20, "step": 1, "unit": "s", "default": 8 },
+    { "type": "checkbox", "id": "show_once", "label": "Open only once per session (keep floating chip after close)", "default": true },
+
+    {
+      "type": "select",
+      "id": "display_mode",
+      "label": "Display mode",
+      "options": [
+        { "value": "modal", "label": "Full-screen modal" },
+        { "value": "corner", "label": "Corner banner (bottom-right)" }
+      ],
+      "default": "modal"
+    },
+
+    { "type": "text", "id": "success_message", "label": "Success message", "default": "Thanks for subscribing." },
+
+    { "type": "color", "id": "chip_bg", "label": "Chip background color", "default": "#111111" },
+    { "type": "color", "id": "chip_text_color", "label": "Chip text color", "default": "#ffffff" },
+    { "type": "range", "id": "chip_radius", "label": "Chip corner radius (px)", "min": 0, "max": 100, "step": 1, "default": 24 },
+    { "type": "range", "id": "chip_padding", "label": "Chip padding (all sides, px)", "min": 4, "max": 28, "step": 1, "default": 12 },
+    { "type": "font_picker", "id": "chip_font", "label": "Chip font", "default": "roboto_n4" },
+
+    { "type": "range", "id": "newsletter_radius", "label": "Newsletter inputs corner radius (px)", "min": 0, "max": 100, "step": 1, "default": 100 }
+  ],
+  "blocks": [
+    { "type": "heading", "name": "Heading", "settings": [ { "type": "text", "id": "text", "label": "Heading", "default": "Welcome to Kasa" } ] },
+    { "type": "text", "name": "Text", "settings": [ { "type": "richtext", "id": "text", "label": "Text", "default": "<p>Get 10% off your first order when you subscribe.</p>" } ] },
+    { "type": "image", "name": "Image", "settings": [ { "type": "image_picker", "id": "image", "label": "Image" } ] },
+    {
+      "type": "newsletter",
+      "name": "Newsletter form",
+      "settings": [
+        { "type": "text", "id": "placeholder", "label": "Email placeholder", "default": "Email address" },
+        { "type": "text", "id": "submit_label", "label": "Submit label", "default": "→" }
+      ]
+    },
+    {
+      "type": "button",
+      "name": "Primary button",
+      "settings": [
+        { "type": "text", "id": "label", "label": "Label", "default": "Shop now" },
+        { "type": "url", "id": "link", "label": "Link" }
+      ]
+    },
+    {
+      "type": "button_secondary",
+      "name": "Secondary button",
+      "settings": [
+        { "type": "text", "id": "secondary_label", "label": "Label", "default": "Learn more" },
+        { "type": "url", "id": "secondary_link", "label": "Link" }
+      ]
+    }
+  ],
+  "max_blocks": 8,
+  "presets": [
+    { "name": "Discount modal", "category": "Promotional" }
+  ]
+}
+{% endschema %}

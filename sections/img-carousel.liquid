@@ -1,0 +1,324 @@
+{% comment %}
+  Qualitat i valors — carrusel simple
+  - Usa el mateix <marquee-component> de Horizon (marquee.js)
+  - Només autoplay, sense drag ni configuracions rares
+  - Opcions: colors, padding, amplada card, gap, radi i velocitat
+{% endcomment %}
+
+<script
+  src="{{ 'marquee.js' | asset_url }}"
+  type="module"
+  fetchpriority="low"
+></script>
+
+{% assign gap_between_elements = section.settings.item_gap %}
+
+<div class="section-background color-{{ section.settings.color_scheme }}"></div>
+
+<marquee-component
+  class="section spacing-style gap-style color-{{ section.settings.color_scheme }} section-quality-values"
+  aria-label="{{ section.settings.aria_label | escape }}"
+  style="
+    {%- render 'spacing-style', settings: section.settings %};
+    {% render 'gap-style', value: gap_between_elements, name: 'marquee-gap' %}
+    --marquee-direction: normal;
+    --qv-item-w: {{ section.settings.item_width }}px;
+    --qv-item-radius: {{ section.settings.item_radius }}px;
+    --qv-item-title-size: {{ section.settings.item_title_size }}px;
+    --qv-title-min-h: {{ section.settings.item_title_min_h }}px;
+  "
+  data-speed-factor="{{ section.settings.speed_factor }}"
+  data-movement-direction="normal"
+>
+  <div
+    class="marquee__wrapper"
+    ref="wrapper"
+  >
+    <div
+      class="marquee__content"
+      ref="content"
+    >
+      <div class="marquee__repeated-items">
+        {% for block in section.blocks %}
+          {% assign alt_text = block.settings.alt | default: block.settings.title %}
+          {% capture qv_sizes %}(min-width: 1200px) {{ section.settings.item_width }}px, 50vw{% endcapture %}
+
+          <article class="qv-item" {{ block.shopify_attributes }}>
+            {% if block.settings.title != blank %}
+              <p class="qv-item-title">{{ block.settings.title }}</p>
+            {% endif %}
+
+            {% if block.settings.image != blank %}
+              {% if block.settings.link != blank %}
+                <a class="qv-image-link"
+                   href="{{ block.settings.link }}"
+                   aria-label="{{ block.settings.aria_label | default: block.settings.title | escape }}">
+              {% endif %}
+                  <div class="qv-image-wrap">
+                    {{ block.settings.image
+                      | image_url: width: 1200
+                      | image_tag:
+                        loading: 'lazy',
+                        widths: '400,600,800,1000,1200',
+                        sizes: qv_sizes,
+                        alt: alt_text
+                    }}
+                  </div>
+              {% if block.settings.link != blank %}
+                </a>
+              {% endif %}
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</marquee-component>
+
+{% stylesheet %}
+  /* Estils base del marquee de Horizon (copiats del tema) */
+
+  marquee-component {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .marquee__wrapper {
+    display: flex;
+    gap: var(--marquee-gap);
+    width: fit-content;
+    white-space: nowrap;
+  }
+
+  .marquee__content {
+    min-width: max-content;
+    display: flex;
+    gap: var(--marquee-gap);
+  }
+
+  .marquee__content :is(p, h1, h2, h3, h4, h5, h6) {
+    white-space: nowrap;
+  }
+
+  .marquee__content .marquee__repeated-items * {
+    max-width: none;
+  }
+
+  .marquee__repeated-items {
+    min-width: max-content;
+    display: flex;
+    gap: var(--marquee-gap);
+    align-items: center;
+    justify-content: center;
+  }
+
+  .marquee__repeated-items > * {
+    align-content: center;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    marquee-component:not([data-disabled]) .marquee__wrapper {
+      animation: marquee-motion var(--marquee-speed) linear infinite var(--marquee-direction);
+    }
+  }
+
+  @keyframes marquee-motion {
+    to {
+      transform: translate3d(calc(-50% - (var(--marquee-gap) / 2)), 0, 0);
+    }
+  }
+
+  /* Estils específics per a Qualitat i valors */
+
+  .section-quality-values .marquee__repeated-items {
+    align-items: flex-start;
+  }
+
+  .section-quality-values .qv-item {
+    width: var(--qv-item-w);
+    flex: 0 0 var(--qv-item-w);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .section-quality-values .qv-item-title {
+    font-size: var(--qv-item-title-size);
+    margin: 0 0 8px 0;
+    font-weight: 500;
+    min-height: var(--qv-title-min-h);
+    white-space: normal;
+  }
+
+  .section-quality-values .qv-image-wrap {
+    border-radius: var(--qv-item-radius);
+    overflow: hidden;
+    line-height: 0;
+  }
+
+  .section-quality-values .qv-image-wrap img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  @media (max-width: 990px) {
+    .section-quality-values {
+      --qv-item-w: {{ section.settings.item_width | divided_by: 1.3 | round }}px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .section-quality-values {
+      --qv-item-w: {{ section.settings.item_width | divided_by: 1.6 | round }}px;
+    }
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Carousel",
+  "class": "section-quality-values",
+  "disabled_on": {
+    "groups": ["header", "footer"]
+  },
+  "settings": [
+    {
+      "type": "text",
+      "id": "aria_label",
+      "label": "Etiqueta ARIA del carrusel",
+      "default": "Carrusel d’imatges de qualitat i valors"
+    },
+    {
+      "type": "color_scheme",
+      "id": "color_scheme",
+      "label": "Esquema de colores",
+      "default": "scheme-1"
+    },
+    {
+      "type": "header",
+      "content": "Espaciado"
+    },
+    {
+      "type": "range",
+      "id": "padding-block-start",
+      "label": "Espacio superior",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "px",
+      "default": 40
+    },
+    {
+      "type": "range",
+      "id": "padding-block-end",
+      "label": "Espacio inferior",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "px",
+      "default": 40
+    },
+    {
+      "type": "header",
+      "content": "Cards"
+    },
+    {
+      "type": "range",
+      "id": "item_width",
+      "label": "Amplada de card (px)",
+      "min": 180,
+      "max": 420,
+      "step": 4,
+      "default": 280
+    },
+    {
+      "type": "range",
+      "id": "item_radius",
+      "label": "Arrodoniment imatge (px)",
+      "min": 0,
+      "max": 28,
+      "step": 1,
+      "default": 12
+    },
+    {
+      "type": "range",
+      "id": "item_title_size",
+      "label": "Mida del títol petit (px)",
+      "min": 12,
+      "max": 28,
+      "step": 1,
+      "default": 18
+    },
+    {
+      "type": "range",
+      "id": "item_title_min_h",
+      "label": "Altura mínima títol per card (px)",
+      "min": 0,
+      "max": 120,
+      "step": 2,
+      "default": 24
+    },
+    {
+      "type": "range",
+      "id": "item_gap",
+      "label": "Distància entre cards (px)",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "px",
+      "default": 24
+    },
+    {
+      "type": "range",
+      "id": "speed_factor",
+      "label": "Velocitat (nombre més alt, més lent)",
+      "min": 5,
+      "max": 60,
+      "step": 1,
+      "default": 20
+    }
+  ],
+  "blocks": [
+    {
+      "type": "item",
+      "name": "Element",
+      "settings": [
+        {
+          "type": "text",
+          "id": "title",
+          "label": "Títol petit",
+          "default": "Traçabilitat"
+        },
+        {
+          "type": "image_picker",
+          "id": "image",
+          "label": "Imatge"
+        },
+        {
+          "type": "url",
+          "id": "link",
+          "label": "Enllaç (opcional)"
+        },
+        {
+          "type": "text",
+          "id": "alt",
+          "label": "Alt de la imatge (accessibilitat)"
+        },
+        {
+          "type": "text",
+          "id": "aria_label",
+          "label": "Etiqueta ARIA enllaç (opcional)"
+        }
+      ]
+    }
+  ],
+  "max_blocks": 24,
+  "presets": [
+    {
+      "name": "Qualitat i valors (carrusel)",
+      "category": "Image"
+    }
+  ]
+}
+{% endschema %}
