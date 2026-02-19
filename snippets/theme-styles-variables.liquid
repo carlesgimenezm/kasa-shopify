@@ -165,6 +165,9 @@
     --font-heading--style: {{ settings.type_heading_font.style }};
     --font-heading--weight: {{ settings.type_heading_font.weight }};
 
+    /* Alias: --font-primary--family used in legacy text blocks */
+    --font-primary--family: {{ settings.type_heading_font.family }}, {{ settings.type_heading_font.fallback_families }};
+
     /* Custom h1/h2 font: ITC Garamond Std Light Narrow */
     --font-h1--family: 'ITCGaramondStd-LtNarrow', Georgia, serif;
     --font-h2--family: 'ITCGaramondStd-LtNarrow', Georgia, serif;
